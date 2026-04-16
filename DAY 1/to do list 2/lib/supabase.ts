@@ -9,9 +9,33 @@ if (!supabaseUrl || !supabaseAnonKey) {
   )
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+type SupabaseClientSingleton = ReturnType<typeof createClient>
 
-export const signUpWithEmail = async (email: string, password: string, username: string) => {
+declare global {
+  // Prevent duplicate auth clients during Next.js HMR in dev.
+  var __supabaseClient: SupabaseClientSingleton | undefined
+}
+
+export const supabase =
+  globalThis.__supabaseClient ??
+  createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  })
+
+if (!globalThis.__supabaseClient) {
+  globalThis.__supabaseClient = supabase
+}
+
+export const signUpWithEmail = async (
+  email: string,
+  password: string,
+  username: string,
+  emailRedirectTo?: string
+) => {
   return supabase.auth.signUp({
     email,
     password,
@@ -19,6 +43,7 @@ export const signUpWithEmail = async (email: string, password: string, username:
       data: {
         username,
       },
+      emailRedirectTo,
     },
   })
 }
@@ -32,4 +57,14 @@ export const signInWithEmail = async (email: string, password: string) => {
 
 export const signOutUser = async () => {
   return supabase.auth.signOut()
+}
+
+export const resendSignupEmail = async (email: string, emailRedirectTo?: string) => {
+  return supabase.auth.resend({
+    type: 'signup',
+    email,
+    options: {
+      emailRedirectTo,
+    },
+  })
 }

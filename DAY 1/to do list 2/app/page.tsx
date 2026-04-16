@@ -2,7 +2,7 @@
 
 import { useState, useEffect, type FormEvent } from 'react'
 import './todo.css'
-import { supabase, signInWithEmail, signOutUser, signUpWithEmail } from '@/lib/supabase'
+import { resendSignupEmail, supabase, signInWithEmail, signOutUser, signUpWithEmail } from '@/lib/supabase'
 
 type Task = {
   id: number
@@ -26,6 +26,28 @@ type DbTask = {
   due_date: string | null
 }
 
+const getReadableAuthError = (message?: string) => {
+  const normalized = (message || '').toLowerCase()
+
+  if (normalized.includes('invalid login credentials')) {
+    return 'Login failed. Agar account naya banaya hai to pehle email verify karo.'
+  }
+
+  if (normalized.includes('email not confirmed')) {
+    return 'Email verify nahi hua. Inbox me Supabase verification mail open karke confirm karo.'
+  }
+
+  if (normalized.includes('password should be at least')) {
+    return 'Password kam se kam 6 characters ka rakho.'
+  }
+
+  if (normalized.includes('email rate limit exceeded') || normalized.includes('security purposes')) {
+    return 'Verification email rate limit hit ho gaya. 1-5 min wait karo, phir resend karo.'
+  }
+
+  return message || 'Authentication failed. Please try again.'
+}
+
 export default function TodoApp() {
   const [currentPage, setCurrentPage] = useState('login')
   const [user, setUser] = useState<AppUser | null>(null)
@@ -33,6 +55,11 @@ export default function TodoApp() {
   const [nightMode, setNightMode] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+
+  const getEmailRedirectTo = () => {
+    if (typeof window === 'undefined') return undefined
+    return window.location.origin
+  }
 
   // Load data on mount
   useEffect(() => {
@@ -99,6 +126,20 @@ export default function TodoApp() {
     verifySupabaseConnection()
   }, [])
 
+  useEffect(() => {
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reason = String(event.reason ?? '')
+      if (reason.includes('Failed to connect to MetaMask') || reason.includes('MetaMask extension not found')) {
+        event.preventDefault()
+      }
+    }
+
+    window.addEventListener('unhandledrejection', onUnhandledRejection)
+    return () => {
+      window.removeEventListener('unhandledrejection', onUnhandledRejection)
+    }
+  }, [])
+
   // Apply night mode
   useEffect(() => {
     if (nightMode) {
@@ -135,13 +176,18 @@ export default function TodoApp() {
 
   const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    const email = (document.getElementById('login-email') as HTMLInputElement)?.value
-    const password = (document.getElementById('login-password') as HTMLInputElement)?.value
+    const email = ((document.getElementById('login-email') as HTMLInputElement)?.value || '').trim().toLowerCase()
+    const password = ((document.getElementById('login-password') as HTMLInputElement)?.value || '').trim()
+
+    if (!email.includes('@')) {
+      showNotification('Login me email use karo, username nahi.', 'error')
+      return
+    }
 
     const { data, error } = await signInWithEmail(email, password)
 
     if (error || !data.user) {
-      showNotification(error?.message || 'Invalid email or password', 'error')
+      showNotification(getReadableAuthError(error?.message), 'error')
       return
     }
 
@@ -156,19 +202,53 @@ export default function TodoApp() {
 
   const handleSignup = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    const username = (document.getElementById('signup-username') as HTMLInputElement)?.value
-    const email = (document.getElementById('signup-email') as HTMLInputElement)?.value
-    const password = (document.getElementById('signup-password') as HTMLInputElement)?.value
+    const username = ((document.getElementById('signup-username') as HTMLInputElement)?.value || '').trim()
+    const email = ((document.getElementById('signup-email') as HTMLInputElement)?.value || '').trim().toLowerCase()
+    const password = ((document.getElementById('signup-password') as HTMLInputElement)?.value || '').trim()
 
-    const { error } = await signUpWithEmail(email, password, username)
+    if (password.length < 6) {
+      showNotification('Password kam se kam 6 characters ka hona chahiye.', 'error')
+      return
+    }
+
+    const { data, error } = await signUpWithEmail(email, password, username, getEmailRedirectTo())
 
     if (error) {
-      showNotification(error.message, 'error')
+      showNotification(getReadableAuthError(error.message), 'error')
+      return
+    }
+
+    if (data.session && data.user) {
+      const nextUsername =
+        (data.user.user_metadata?.username as string | undefined) ||
+        data.user.email?.split('@')[0] ||
+        username ||
+        'user'
+      setUser({ username: nextUsername, email: data.user.email || email })
+      await loadUserTasks(nextUsername)
+      setCurrentPage('dashboard')
+      showNotification('Signup successful. You are logged in.', 'success')
       return
     }
 
     showNotification('Account created. Check your email to verify, then login.', 'success')
     setCurrentPage('login')
+  }
+
+  const handleResendVerification = async () => {
+    const email = ((document.getElementById('login-email') as HTMLInputElement)?.value || '').trim().toLowerCase()
+    if (!email || !email.includes('@')) {
+      showNotification('Pehle login email field me valid email likho.', 'error')
+      return
+    }
+
+    const { error } = await resendSignupEmail(email, getEmailRedirectTo())
+    if (error) {
+      showNotification(getReadableAuthError(error.message), 'error')
+      return
+    }
+
+    showNotification('Verification email sent. Inbox/Spam check karo.', 'success')
   }
 
   const handleDemoLogin = async () => {
@@ -372,6 +452,10 @@ export default function TodoApp() {
 
             <div className="link-text">
               Don't have an account? <a onClick={() => setCurrentPage('signup')}>Sign Up</a>
+            </div>
+
+            <div className="link-text" style={{marginTop: '10px'}}>
+              <a onClick={handleResendVerification}>Resend verification email</a>
             </div>
 
             <div className="link-text" style={{marginTop: '10px'}}>
