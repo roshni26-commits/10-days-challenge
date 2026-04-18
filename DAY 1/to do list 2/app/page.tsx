@@ -292,6 +292,8 @@ export default function TodoApp() {
     const prioritySelect = document.getElementById('task-priority') as HTMLSelectElement
     const dueDateInput = document.getElementById('task-duedate') as HTMLInputElement
 
+    if (!taskInput || !prioritySelect || !dueDateInput) return
+
     const newTask: Task = {
       id: Date.now(),
       text: taskInput.value,
@@ -390,15 +392,17 @@ export default function TodoApp() {
   }
 
   const handleLogout = async () => {
-    const { error } = await signOutUser()
-    if (error) {
-      showNotification('Logout failed. Try again.', 'error')
-      return
+    try {
+      await signOutUser()
+    } catch (err) {
+      console.error('Logout error:', err)
+    } finally {
+      // Always clear state and redirect to login
+      setUser(null)
+      setTasks([])
+      setCurrentPage('login')
+      showNotification('Logged out successfully', 'success')
     }
-
-    setUser(null)
-    setTasks([])
-    setCurrentPage('login')
   }
 
   const showNotification = (message: string, type = 'info') => {
@@ -435,7 +439,7 @@ export default function TodoApp() {
       {currentPage === 'login' && (
         <div className="auth-container">
           <div className="auth-card">
-            <h1 className="auth-title">✨ Golden Todo</h1>
+            <h1 className="auth-title">Golden Todo</h1>
             <h2 className="form-title" style={{textAlign: 'center', fontSize: '18px', color: 'var(--text-dim)', marginBottom: '30px'}}>Welcome Back</h2>
             
             <form onSubmit={handleLogin}>
@@ -451,15 +455,15 @@ export default function TodoApp() {
             </form>
 
             <div className="link-text">
-              Don't have an account? <a onClick={() => setCurrentPage('signup')}>Sign Up</a>
+              Don't have an account? <a onClick={() => setCurrentPage('signup')} style={{cursor: 'pointer'}}>Sign Up</a>
             </div>
 
             <div className="link-text" style={{marginTop: '10px'}}>
-              <a onClick={handleResendVerification}>Resend verification email</a>
+              <a onClick={handleResendVerification} style={{cursor: 'pointer'}}>Resend verification email</a>
             </div>
 
             <div className="link-text" style={{marginTop: '10px'}}>
-              <a onClick={handleDemoLogin} style={{color: 'var(--success)'}}>Try Demo</a>
+              <a onClick={handleDemoLogin} style={{color: 'var(--success)', cursor: 'pointer'}}>Try Demo</a>
             </div>
           </div>
         </div>
@@ -469,7 +473,7 @@ export default function TodoApp() {
       {currentPage === 'signup' && (
         <div className="auth-container">
           <div className="auth-card">
-            <h1 className="auth-title">✨ Golden Todo</h1>
+            <h1 className="auth-title">Golden Todo</h1>
             <h2 className="form-title" style={{textAlign: 'center', fontSize: '18px', color: 'var(--text-dim)', marginBottom: '30px'}}>Create Account</h2>
             
             <form onSubmit={handleSignup}>
@@ -489,7 +493,7 @@ export default function TodoApp() {
             </form>
 
             <div className="link-text">
-              Already have an account? <a onClick={() => setCurrentPage('login')}>Login</a>
+              Already have an account? <a onClick={() => setCurrentPage('login')} style={{cursor: 'pointer'}}>Login</a>
             </div>
           </div>
         </div>
@@ -499,11 +503,11 @@ export default function TodoApp() {
       {currentPage === 'dashboard' && (
         <div className="dashboard">
           <div className="dashboard-header">
-            <h1 className="dashboard-title">📋 Your Tasks</h1>
+            <h1 className="dashboard-title">Your Tasks</h1>
             <div className="header-controls">
-              <button className="btn-icon" onClick={() => setNightMode(!nightMode)} title="Toggle Night Mode">🌙</button>
-              <button className="btn-secondary btn-small" onClick={exportTasks}>📥 Export</button>
-              <button className="btn-danger btn-small" onClick={handleLogout}>🚪 Logout</button>
+              <button className="btn-icon" onClick={() => setNightMode(!nightMode)} title="Toggle Night Mode">Mode</button>
+              <button className="btn-secondary btn-small" onClick={exportTasks}>Export</button>
+              <button className="btn-danger btn-small" onClick={handleLogout}>Logout</button>
             </div>
           </div>
 
@@ -527,7 +531,7 @@ export default function TodoApp() {
 
           {/* Task Form */}
           <div className="task-form">
-            <div className="form-title">➕ Add New Task</div>
+            <div className="form-title">Add New Task</div>
             <form onSubmit={handleAddTask}>
               <div className="task-input-group">
                 <input type="text" id="task-input" placeholder="What do you need to do?" required />
@@ -554,7 +558,7 @@ export default function TodoApp() {
           <div className="search-container">
             <input 
               type="text" 
-              placeholder="🔍 Search tasks..." 
+              placeholder="Search tasks..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -575,7 +579,7 @@ export default function TodoApp() {
                     <div className="task-text">{task.text}</div>
                     <div className="task-meta">
                       <span className={`task-priority ${task.priority}`}>{task.priority.toUpperCase()}</span>
-                      {task.dueDate && <span>📅 {new Date(task.dueDate).toLocaleDateString()}</span>}
+                      {task.dueDate && <span>Date: {new Date(task.dueDate).toLocaleDateString()}</span>}
                     </div>
                   </div>
                   <div className="task-actions">
@@ -586,7 +590,6 @@ export default function TodoApp() {
               ))
             ) : (
               <div className="empty-state">
-                <div className="empty-icon">📭</div>
                 <div className="empty-text">No tasks found. {searchQuery ? 'Try a different search.' : 'Add one to get started!'}</div>
               </div>
             )}
@@ -605,7 +608,7 @@ export default function TodoApp() {
                 <input 
                   type="text" 
                   value={editingTask.text}
-                  onChange={(e) => setEditingTask({...editingTask, text: e.target.value})}
+                  onChange={(e) => setEditingTask(prev => prev ? {...prev, text: e.target.value} : null)}
                   required
                 />
               </div>
@@ -613,7 +616,7 @@ export default function TodoApp() {
                 <label>Priority</label>
                 <select 
                   value={editingTask.priority}
-                  onChange={(e) => setEditingTask({...editingTask, priority: e.target.value})}
+                  onChange={(e) => setEditingTask(prev => prev ? {...prev, priority: e.target.value as Task['priority']} : null)}
                 >
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
@@ -625,7 +628,7 @@ export default function TodoApp() {
                 <input 
                   type="date" 
                   value={editingTask.dueDate || ''}
-                  onChange={(e) => setEditingTask({...editingTask, dueDate: e.target.value})}
+                  onChange={(e) => setEditingTask(prev => prev ? {...prev, dueDate: e.target.value || null} : null)}
                 />
               </div>
               <div className="modal-actions">
